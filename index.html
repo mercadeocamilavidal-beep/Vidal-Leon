@@ -104,18 +104,33 @@ html,body{overflow:hidden;max-width:100vw}
 #hint{display:none;position:absolute;z-index:4;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);font:600 12.5px var(--f-body);padding:9px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;transition:opacity .6s;white-space:nowrap}
 #hint.off{opacity:0}
 @media (prefers-reduced-motion:reduce){#world.anim,#panel{transition:none}}
+
+#play{border:0;border-radius:999px;padding:11px 18px;font:700 14px var(--f-body,Poppins,sans-serif);color:#fff;background:linear-gradient(90deg,#ff2e63,#ff8f1f);box-shadow:0 4px 14px rgba(255,46,99,.35);cursor:pointer;white-space:nowrap}
+#play:hover{filter:brightness(1.06)}
+#cap{display:none;position:absolute;z-index:8;left:0;right:0;bottom:0;padding:22px 5vw 26px;background:linear-gradient(transparent,color-mix(in srgb,var(--bg) 92%,transparent) 45%);pointer-events:none}
+#cap .t{display:inline-block;font-weight:800;font-size:clamp(20px,3.4vw,44px);padding:.25em .8em;border-radius:999px;color:var(--tc,#fff);background:var(--c,#14172b);box-shadow:0 6px 20px rgba(20,23,60,.25)}
+#cap .s{margin-top:8px;font-weight:600;font-size:clamp(13px,1.8vw,22px);color:var(--ink);opacity:.75}
+#pbar{position:absolute;left:0;bottom:0;height:5px;width:0;background:var(--c,#ff2e63);z-index:9}
+#pctl{display:none;position:absolute;z-index:9;top:12px;right:12px;gap:8px}
+#pctl button{border:0;border-radius:50%;width:42px;height:42px;font-size:17px;font-weight:700;background:var(--surface);color:var(--ink);box-shadow:var(--card-sh);cursor:pointer}
+body.pres #cap,body.pres #pctl{display:block}body.pres #pctl{display:flex}
+body.pres #top,body.pres .zoom,body.pres .legend,body.pres #hint,body.pres #panel{display:none!important}
+body.pres #pctl{opacity:.0;transition:opacity .3s}body.pres.mv #pctl{opacity:1}
+body.pres{cursor:none}body.pres.mv{cursor:default}
+@media(max-width:700px){#play{padding:8px 12px;font-size:12px}}
 </style>
 
 <div id="bg"></div><div id="stage"><div id="world"><svg id="lines"></svg></div></div>
 <header id="top">
   <div class="row1">
     <div><h1>Árbol Vidal León</h1><div class="strip" id="strip"></div><div class="sub" id="count" style="margin-top:4px"></div></div>
+    <button id="play" aria-label="Reproducir presentación">▶ Presentar</button>
     <div class="search"><input id="q" type="search" placeholder="Buscar una persona…" autocomplete="off" aria-label="Buscar una persona"><div id="results" hidden></div></div>
   </div>
   <nav class="chips" id="chips" aria-label="Ramas"></nav>
 </header>
 <div class="zoom"><button class="zb" id="zin" aria-label="Acercar">+</button><button class="zb" id="zout" aria-label="Alejar">−</button><button class="zb" id="zfit" aria-label="Ver todo" title="Ver todo">⤢</button></div>
-<div id="hint">v8 · Pellizca para acercar · toca una rama arriba</div>
+<div id="hint">v9 · Pellizca para acercar · toca una rama arriba</div>
 <div class="legend"><span><i></i>pareja</span><span><i class="d"></i>un solo padre o madre</span></div>
 <aside id="panel" aria-live="polite"><button class="x" id="px" aria-label="Cerrar">×</button><div id="pb"></div></aside>
 
@@ -156,7 +171,7 @@ ids.forEach(k=>{const p=PPL[k],[a,b]=SUR[k];const c=document.createElement('div'
   c.onclick=()=>{if(!moved)select(k,true)};c.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(k,true)}};
   world.appendChild(c);cards[k]=c});
 $('#strip').innerHTML=D.branches.filter(b=>b.t!=='Por conectar').map(b=>`<i style="background:${b.c}"></i>`).join('');
-$('#count').textContent=`${ids.length} personas · ${D.branches.filter(b=>b.t!=='Por conectar').length} ramas · v8`;
+$('#count').textContent=`${ids.length} personas · ${D.branches.filter(b=>b.t!=='Por conectar').length} ramas · v9`;
 // chips
 const chips=$('#chips');
 const all=document.createElement('button');all.className='chip';all.style.setProperty('--c','#14172b');all.style.setProperty('--tc','#fff');all.textContent='Todo el árbol';all.onclick=()=>{select(null);fit(true)};chips.appendChild(all);
@@ -237,6 +252,42 @@ q.addEventListener('keydown',e=>{if(e.key==='Enter'){const b=res.querySelector('
 document.addEventListener('click',e=>{if(!e.target.closest('.search'))res.hidden=true});
 initView();
 {const h=$('#hint');if(h)setTimeout(()=>h.classList.add('off'),6000)}
+
+// ===== Modo presentación =====
+(function(){
+const body=document.body;let slides=[],i=0,timer=null,paused=false,t0=0,dur=0,raf=0,mvT=0;
+const cap=document.createElement('div');cap.id='cap';cap.innerHTML='<span class="t"></span><div class="s"></div>';
+const bar=document.createElement('div');bar.id='pbar';bar.style.display='none';
+const ctl=document.createElement('div');ctl.id='pctl';ctl.innerHTML='<button id="pprev" aria-label="Anterior">‹</button><button id="ppause" aria-label="Pausa">❚❚</button><button id="pnext" aria-label="Siguiente">›</button><button id="pexit" aria-label="Salir">✕</button>';
+stage.appendChild(cap);stage.appendChild(bar);stage.appendChild(ctl);
+function build(){
+  const br=D.branches.filter(b=>b.t!=='Por conectar');
+  slides=[{t:'Árbol Vidal León',s:ids.length+' personas · '+br.length+' ramas',c:'#14172b',tc:'#fff',d:5000,f:()=>fitBox(0,40,D.W,D.H+0.18*D.H,true,16,6)}];
+  const a=PPL.jmaria,b2=PPL.susana;
+  if(a&&b2)slides.push({t:'Jesús María Vidal y Susana León',s:'Los abuelos y sus '+br.length+' hijos',c:'#ff2e63',tc:'#fff',d:6000,
+    f:()=>fitBox(Math.min(a.x,b2.x)-D.CW*2,a.y-60,Math.max(a.x,b2.x)+D.CW*3,a.y+D.CH+260,true,20,10)});
+  br.forEach(b=>{const n=ids.filter(k=>PPL[k].br===b.id).length;
+    slides.push({t:'Rama '+b.t,s:n+(n===1?' persona':' personas'),c:b.c,tc:tcOf(b.c),d:Math.min(14000,6000+n*400),f:()=>fitBox(b.x0,b.y0-30,b.x1,b.y1+0.2*(b.y1-b.y0)+30,true,24,6)})});
+}
+function show(n){i=(n+slides.length)%slides.length;const sl=slides[i];select(null);sl.f();
+  cap.style.setProperty('--c',sl.c);cap.style.setProperty('--tc',sl.tc);cap.querySelector('.t').textContent=sl.t;cap.querySelector('.s').textContent=sl.s;
+  bar.style.setProperty('--c',sl.c);dur=sl.d;t0=performance.now();}
+function tick(now){if(!body.classList.contains('pres'))return;
+  if(!paused){const p=(now-t0)/dur;bar.style.width=Math.min(100,p*100)+'%';if(p>=1)show(i+1)}else t0=now-(parseFloat(bar.style.width)||0)/100*dur;
+  raf=requestAnimationFrame(tick)}
+function start(){build();body.classList.add('pres');bar.style.display='block';paused=false;$('#ppause').textContent='❚❚';
+  try{const e=document.documentElement;(e.requestFullscreen||e.webkitRequestFullscreen||(()=>0)).call(e)}catch(_){}
+  setTimeout(()=>{show(0);cancelAnimationFrame(raf);raf=requestAnimationFrame(tick)},250)}
+function stop(){body.classList.remove('pres','mv');bar.style.display='none';cancelAnimationFrame(raf);
+  try{if(document.fullscreenElement)document.exitFullscreen()}catch(_){}
+  setTimeout(()=>fit(true),200)}
+$('#play').onclick=start;$('#pexit').onclick=stop;$('#pnext').onclick=()=>show(i+1);$('#pprev').onclick=()=>show(i-1);
+$('#ppause').onclick=()=>{paused=!paused;$('#ppause').textContent=paused?'▶':'❚❚'};
+document.addEventListener('keydown',e=>{if(!body.classList.contains('pres'))return;
+  if(e.key==='Escape')stop();else if(e.key==='ArrowRight')show(i+1);else if(e.key==='ArrowLeft')show(i-1);else if(e.key===' '){e.preventDefault();$('#ppause').click()}});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&body.classList.contains('pres'))stop()});
+document.addEventListener('pointermove',()=>{if(!body.classList.contains('pres'))return;body.classList.add('mv');clearTimeout(mvT);mvT=setTimeout(()=>body.classList.remove('mv'),2500)});
+})();
 </script>
 
 </html>
